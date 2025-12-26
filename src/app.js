@@ -4,102 +4,98 @@ const helmet = require("helmet");
 require("dotenv").config();
 
 const logger = require("./utils/logger");
-const { pool, connectDB } = require("./utils/database");
+const { connectDB } = require("./utils/database");
 const { initScheduler } = require("./services/scheduler");
 
-// Initialize database connection
-connectDB().then(() => {
-	// Start scheduler
-	initScheduler();
-});
+// Routes
 const authRoutes = require("./routes/auth");
 const userRoutes = require("./routes/users");
 const postRoutes = require("./routes/posts");
-const { optionalAuth } = require("./middleware/auth");
+const likeRoutes = require("./routes/likes");
+const commentRoutes = require("./routes/comments");
 
 /**
- * Express application setup and configuration
+ * Express application setup
  */
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Security middleware
-// Security middleware
+/* -------------------- Middleware -------------------- */
+
+// Security
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors());
 
-// Body parsing middleware
+// Body parsing
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
-const { graphqlHTTP } = require("express-graphql");
-const schema = require("./graphql/schema");
+/* -------------------- Routes -------------------- */
 
-// API routes
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/posts", postRoutes);
-app.use("/api/likes", require("./routes/likes"));
-app.use("/api/comments", require("./routes/comments"));
+app.use("/api/likes", likeRoutes);
+app.use("/api/comments", commentRoutes);
 
-// GraphQL Endpoint
-app.use(
-	"/graphql",
-	optionalAuth, // Populate req.user if token exists
-	graphqlHTTP({
-		schema: schema,
-		graphiql: true,
-	})
-);
-
-// Health check endpoint
+// Health check
 app.get("/health", (req, res) => {
-	res.status(200).json({ status: "OK", timestamp: new Date().toISOString() });
+  res.status(200).json({
+    status: "OK",
+    timestamp: new Date().toISOString(),
+  });
 });
 
-// Root endpoint
+// Root
 app.get("/", (req, res) => {
-	res.status(200).json({
-		message: "Social Media Backend API is running",
-		documentation: "/walkthrough.md", // technically not served, but helpful hint
-		endpoints: {
-			health: "/health",
-			graphql: "/graphql",
-			api: "/api"
-		}
-	});
+  res.status(200).json({
+    message: "Social Media Backend API is running",
+    endpoints: {
+      health: "/health",
+      auth: "/api/auth",
+      users: "/api/users",
+      posts: "/api/posts",
+      likes: "/api/likes",
+      comments: "/api/comments",
+    },
+  });
 });
+
+/* -------------------- Error Handling -------------------- */
 
 // Global error handler
 app.use((err, req, res, next) => {
-	logger.critical("Unhandled error:", err);
-	res.status(500).json({
-		error: "Internal server error",
-		...(process.env.NODE_ENV === "development" && { details: err.message }),
-	});
+  logger.critical("Unhandled error:", err);
+  res.status(500).json({
+    error: "Internal server error",
+    ...(process.env.NODE_ENV === "development" && {
+      details: err.message,
+    }),
+  });
 });
 
 // 404 handler
 app.use("*", (req, res) => {
-	res.status(404).json({ error: "Route not found" });
+  res.status(404).json({ error: "Route not found" });
 });
 
-/**
- * Start the server
- */
+/* -------------------- Server Startup -------------------- */
+
 const startServer = async () => {
-	try {
-		await connectDB();
-		app.listen(PORT, () => {
-			logger.verbose(`Server is running on port ${PORT}`);
-			logger.verbose(
-				`Environment: ${process.env.NODE_ENV || "development"}`
-			);
-		});
-	} catch (error) {
-		logger.critical("Failed to start server:", error);
-		process.exit(1);
-	}
+  try {
+    await connectDB();
+    initScheduler();
+
+    app.listen(PORT, () => {
+      logger.verbose(`Server running on port ${PORT}`);
+      logger.verbose(
+        `Environment: ${process.env.NODE_ENV || "development"}`
+      );
+    });
+  } catch (error) {
+    logger.critical("Failed to start server:", error);
+    process.exit(1);
+  }
 };
 
 startServer();
