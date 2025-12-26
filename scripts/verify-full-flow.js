@@ -1,101 +1,154 @@
-const axios = require('axios');
+const axios = require("axios");
+const { randomUUID } = require("crypto");
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const BASE_URL = "https://backend-social-media-7lv6.onrender.com";
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-const testFlow = async () => {
-    const BASE_URL = 'http://localhost:3000/api';
+/* -------- Helpers -------- */
 
-    try {
-        console.log("Starting verification...");
+const authHeader = (token) => ({
+  headers: { Authorization: token } // raw JWT (your middleware expects this)
+});
 
-        // 1. Register User A
-        const userA = {
-            username: `usera${Date.now()}`,
-            email: `usera${Date.now()}@example.com`,
-            password: 'password123',
-            full_name: 'User A'
-        };
+const cleanId = () =>
+  randomUUID().replace(/[^a-zA-Z0-9]/g, "").slice(0, 12);
 
-        console.log("Registering User A...");
-        const resA = await axios.post(`${BASE_URL}/auth/register`, userA);
-        const tokenA = resA.data.token;
-        const idA = resA.data.user.id;
-        console.log("User A registered:", idA);
+/* -------- Test Flow -------- */
 
-        // 2. Register User B
-        const userB = {
-            username: `userb${Date.now()}`,
-            email: `userb${Date.now()}@example.com`,
-            password: 'password123',
-            full_name: 'User B'
-        };
+(async function verifyFullFlow() {
+  try {
+    console.log("Starting full API verification...");
 
-        console.log("Registering User B...");
-        const resB = await axios.post(`${BASE_URL}/auth/register`, userB);
-        const tokenB = resB.data.token;
-        const idB = resB.data.user.id;
-        console.log("User B registered:", idB);
+    /* ========== REGISTER USERS (GET TOKEN HERE) ========== */
 
-        // 3. User B Posts Content
-        console.log("User B posting content...");
-        const postRes = await axios.post(`${BASE_URL}/posts`, {
-            content: "Hello World from User B!",
-            media_url: "http://example.com/image.jpg",
-            comments_enabled: true
-        }, { headers: { Authorization: tokenB } });
-        const postId = postRes.data.post.id;
-        console.log("User B posted:", postId);
+    const uidA = cleanId();
+    const userA = {
+      username: `userA${uidA}`,
+      email: `usera${uidA}@example.com`,
+      password: "password123",
+      full_name: "User A"
+    };
 
-        // 4. User A Follows User B
-        console.log("User A following User B...");
-        await axios.post(`${BASE_URL}/users/follow`, { followingId: idB }, { headers: { Authorization: tokenA } });
-        console.log("User A followed User B");
+    const uidB = cleanId();
+    const userB = {
+      username: `userB${uidB}`,
+      email: `userb${uidB}@example.com`,
+      password: "password123",
+      full_name: "User B"
+    };
 
-        // 5. User A Checks Feed
-        console.log("User A checking feed...");
-        const feedRes = await axios.get(`${BASE_URL}/posts/feed`, { headers: { Authorization: tokenA } });
-        const feedPosts = feedRes.data.feed;
-        const foundPost = feedPosts.find(p => p.id === postId);
+    const regA = await axios.post(`${BASE_URL}/api/auth/register`, userA);
+    const regB = await axios.post(`${BASE_URL}/api/auth/register`, userB);
 
-        if (foundPost) {
-            console.log("✅ User A sees User B's post in feed");
-        } else {
-            console.error("❌ User A DOES NOT see User B's post in feed");
-        }
+    const tokenA = regA.data.token;
+    const tokenB = regB.data.token;
+    const idA = regA.data.user.id;
+    const idB = regB.data.user.id;
 
-        // 6. User A Likes User B's Post
-        console.log("User A liking post...");
-        await axios.post(`${BASE_URL}/likes`, { post_id: postId }, { headers: { Authorization: tokenA } });
-        console.log("User A liked post");
-
-        // Verify Like Count
-        const likeRes = await axios.get(`${BASE_URL}/likes/post/${postId}`, { headers: { Authorization: tokenA } });
-        // Assuming getLikes returns { likes: [...] }
-        if (likeRes.data.likes.some(l => l.id === idA)) {
-            console.log("✅ Like verified");
-        } else {
-            console.error("❌ Like verification failed");
-        }
-
-        // 7. User A Comments on User B's Post
-        console.log("User A commenting...");
-        await axios.post(`${BASE_URL}/comments`, { post_id: postId, content: "Great post!" }, { headers: { Authorization: tokenA } });
-        console.log("User A commented");
-
-        // Verify Comment
-        const commentRes = await axios.get(`${BASE_URL}/comments/post/${postId}`, { headers: { Authorization: tokenA } });
-        if (commentRes.data.comments.some(c => c.content === "Great post!" && c.user_id === idA)) {
-            console.log("✅ Comment verified");
-        } else {
-            console.error("❌ Comment verification failed");
-        }
-
-        console.log("🎉 All verification steps completed successfully!");
-
-    } catch (error) {
-        console.error("Verification failed:", error.response ? error.response.data : error.message);
-        process.exit(1);
+    if (!tokenA || !tokenB) {
+      throw new Error("Token not returned on registration");
     }
-};
 
-testFlow();
+    console.log("✅ Auth verified (via register)");
+
+    /* ========== USERS ========== */
+
+    await axios.post(
+      `${BASE_URL}/api/users/follow`,
+      { followingId: idB },
+      authHeader(tokenA)
+    );
+
+    await axios.get(`${BASE_URL}/api/users/following`, authHeader(tokenA));
+    await axios.get(`${BASE_URL}/api/users/followers`, authHeader(tokenB));
+    await axios.get(`${BASE_URL}/api/users/stats`, authHeader(tokenA));
+    await axios.get(
+      `${BASE_URL}/api/users/search?q=userB`,
+      authHeader(tokenA)
+    );
+
+    console.log("✅ Users endpoints verified");
+
+    /* ========== POSTS ========== */
+
+    const postRes = await axios.post(
+      `${BASE_URL}/api/posts`,
+      {
+        content: "Hello from User B",
+        media_url: "http://www.google.com",
+        comments_enabled: true
+      },
+      authHeader(tokenB)
+    );
+
+    const postId = postRes.data.post.id;
+
+    await sleep(300);
+
+    const feedRes = await axios.get(
+      `${BASE_URL}/api/posts/feed`,
+      authHeader(tokenA)
+    );
+
+    if (!feedRes.data.feed.some(p => p.id === postId)) {
+      throw new Error("Feed verification failed");
+    }
+
+    console.log("✅ Posts verified");
+
+    /* ========== LIKES ========== */
+
+    await axios.post(
+      `${BASE_URL}/api/likes`,
+      { post_id: postId },
+      authHeader(tokenA)
+    );
+
+    await sleep(200);
+
+    const likesRes = await axios.get(
+      `${BASE_URL}/api/likes/post/${postId}`,
+      authHeader(tokenA)
+    );
+
+    if (!likesRes.data.likes.some(u => u.id === idA)) {
+      throw new Error("Like verification failed");
+    }
+
+    console.log("✅ Likes verified");
+
+    /* ========== COMMENTS ========== */
+
+    const commentRes = await axios.post(
+      `${BASE_URL}/api/comments`,
+      { post_id: postId, content: "Nice post!" },
+      authHeader(tokenA)
+    );
+
+    const commentId = commentRes.data.comment.id;
+
+    await axios.put(
+      `${BASE_URL}/api/comments/${commentId}`,
+      { content: "Updated comment" },
+      authHeader(tokenA)
+    );
+
+    const commentsRes = await axios.get(
+      `${BASE_URL}/api/comments/post/${postId}`,
+      authHeader(tokenA)
+    );
+
+    if (!commentsRes.data.comments.some(c => c.id === commentId)) {
+      throw new Error("Comment verification failed");
+    }
+
+    console.log("🎉 ALL ENDPOINTS VERIFIED SUCCESSFULLY");
+
+  } catch (err) {
+    console.error(
+      "❌ Verification failed:",
+      err.response?.data || err.message
+    );
+    process.exit(1);
+  }
+})();

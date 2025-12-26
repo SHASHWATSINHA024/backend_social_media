@@ -17,7 +17,7 @@ const createUser = async ({ username, email, password, full_name }) => {
     `INSERT INTO users (username, email, password_hash, full_name, created_at)
      VALUES ($1, $2, $3, $4, NOW())
      RETURNING id, username, email, full_name, created_at`,
-    [username, email, password, full_name],
+    [username, email, hashedPassword, full_name],
   );
 
   return result.rows[0];
